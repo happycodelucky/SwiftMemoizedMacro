@@ -11,6 +11,24 @@ A Swift macro that turns computed properties into dependency-tracked cached gett
 
 Think `useMemo` from React, but as a Swift macro.
 
+## Installation
+
+Add to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/happycodelucky/SwiftMemoizedMacro.git", from: "0.1.0"),
+],
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: [
+            .product(name: "Memoized", package: "SwiftMemoizedMacro"),
+        ]
+    ),
+]
+```
+
 ## Usage
 
 ### Single Dependency
@@ -100,29 +118,6 @@ var palette: Palette {
         return value
     }
 }
-```
-
-## Requirements
-
-- Swift 6.0+
-- macOS 14+ / iOS 17+
-
-## Installation
-
-Add to your `Package.swift`:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/happycodelucky/SwiftMemoizedMacro.git", from: "0.1.0"),
-],
-targets: [
-    .target(
-        name: "YourTarget",
-        dependencies: [
-            .product(name: "Memoized", package: "SwiftMemoizedMacro"),
-        ]
-    ),
-]
 ```
 
 ## Design Decisions
