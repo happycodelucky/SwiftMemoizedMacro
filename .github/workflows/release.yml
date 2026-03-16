@@ -78,7 +78,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
           gh release create "${{ steps.version.outputs.tag }}" \
-            --target HEAD \
+            --target "$COMMIT_SHA" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes
