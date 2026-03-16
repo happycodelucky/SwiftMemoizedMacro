@@ -64,7 +64,7 @@ struct ContentView: View {
 
 The `@Memoized` macro expands a computed property into:
 
-1. **A backing storage field** (`_memoized_<name>`) — holds the cached deps snapshot + value
+1. **A backing storage box** (`_memoized_<name>`) — a reference-type cache holding the deps snapshot + value
 2. **A compute function** (`_compute_<name>()`) — the original getter body
 3. **A replacement getter** — checks if deps changed before recomputing
 
@@ -76,7 +76,7 @@ var palette: Palette {
 }
 
 // Macro expands to:
-private var _memoized_palette: MemoizedStorage<Palette>? = nil
+private let _memoized_palette = MemoizedBox<Palette>()
 
 private func _compute_palette() -> Palette {
     Palette.generate(mode: colorMode)
@@ -85,11 +85,11 @@ private func _compute_palette() -> Palette {
 var palette: Palette {
     get {
         let deps = self.colorMode
-        if let storage = _memoized_palette, storage.isValid(for: deps) {
-            return storage.value
+        if let cached = _memoized_palette.value(for: deps) {
+            return cached
         }
         let value = _compute_palette()
-        _memoized_palette = MemoizedStorage(deps: deps, value: value)
+        _memoized_palette.store(value: value, deps: deps)
         return value
     }
 }
@@ -97,7 +97,7 @@ var palette: Palette {
 
 ## Requirements
 
-- Swift 5.9+
+- Swift 6.0+
 - macOS 14+ / iOS 17+
 
 ## Installation
@@ -106,13 +106,13 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/happycodelucky/swift-memoized.git", from: "0.1.0"),
+    .package(url: "https://github.com/happycodelucky/SwiftMemoizedMacro.git", from: "0.1.0"),
 ],
 targets: [
     .target(
         name: "YourTarget",
         dependencies: [
-            .product(name: "Memoized", package: "swift-memoized"),
+            .product(name: "Memoized", package: "SwiftMemoizedMacro"),
         ]
     ),
 ]
@@ -123,8 +123,8 @@ targets: [
 **Why key paths instead of automatic tracking?**
 Explicit deps mean zero runtime overhead for observation tracking, no `withObservationTracking` complexity, and clear visibility into what triggers invalidation. It's the same philosophy as React's `useMemo` dependency array.
 
-**Why type-erased storage?**
-`MemoizedStorage<Value>` erases the `Deps` type via a closure so the macro doesn't need to spell out complex tuple types for the backing field. The `Deps` type only needs to be `Equatable`.
+**Why a reference-type box?**
+`MemoizedBox<Value>` is a class so the getter can update the cache without mutating `self`, making it work in both classes and structs (including SwiftUI views). It erases the `Deps` type via a closure so the macro doesn't need to spell out complex tuple types. The `Deps` type only needs to be `Equatable`.
 
 **Why not a property wrapper?**
 Property wrappers can't access `self` at init time, so there's no way to read dependency key paths without external wiring. Macros can rewrite the getter to capture `self.<dep>` directly.
