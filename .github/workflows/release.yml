@@ -62,11 +62,23 @@ jobs:
           echo "tag=v${NEW_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Bumping ${LATEST} → ${NEW_VERSION} (${{ inputs.bump }})"
 
+      - name: Update README version
+        run: |
+          sed -i '' 's/from: "[0-9]*\.[0-9]*\.[0-9]*"/from: "${{ steps.version.outputs.version }}"/' README.md
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "Update README version to ${{ steps.version.outputs.version }} [skip ci]"
+          git push
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
-            --target "${{ github.sha }}" \
+            --target HEAD \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes
