@@ -1,5 +1,11 @@
 # Memoized
 
+![Swift 6.0+](https://img.shields.io/badge/Swift-6.0%2B-F05138.svg?style=for-the-badge&logo=swift&logoColor=white)
+![macOS 14+ | iOS 17+](https://img.shields.io/badge/macOS%2014%2B%20%7C%20iOS%2017%2B-blue.svg?style=for-the-badge&logo=apple)
+[![CI](https://img.shields.io/github/actions/workflow/status/happycodelucky/SwiftMemoizedMacro/tests.yml?style=for-the-badge&label=ci)](https://github.com/happycodelucky/SwiftMemoizedMacro/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/happycodelucky/SwiftMemoizedMacro?style=for-the-badge)](https://github.com/happycodelucky/SwiftMemoizedMacro/releases/latest)
+[![Maintained](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=for-the-badge)](https://github.com/happycodelucky/SwiftMemoizedMacro/graphs/commit-activity)
+
 A Swift macro that turns computed properties into dependency-tracked cached getters. The cached value is only recomputed when the specified dependency properties change.
 
 Think `useMemo` from React, but as a Swift macro.
