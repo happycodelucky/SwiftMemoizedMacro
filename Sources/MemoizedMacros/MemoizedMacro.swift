@@ -73,15 +73,13 @@ public struct MemoizedMacro: AccessorMacro, PeerMacro {
         }
 
         let accessor: AccessorDeclSyntax = """
-            get {
-                let deps = \(raw: depsExpr)
-                if let cached = \(raw: storageName).value(for: deps) {
-                    return cached
-                }
-                let value = \(raw: computeFnName)()
-                \(raw: storageName).store(value: value, deps: deps)
-                return value
+            let deps = \(raw: depsExpr)
+            if let cached = \(raw: storageName).value(for: deps) {
+                return cached
             }
+            let value = \(raw: computeFnName)()
+            \(raw: storageName).store(value: value, deps: deps)
+            return value
             """
 
         return [accessor]
