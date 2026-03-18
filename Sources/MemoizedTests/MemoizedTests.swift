@@ -6,41 +6,96 @@ import XCTest
 import MemoizedMacros
 
 let testMacros: [String: Macro.Type] = [
-    "Memoized": MemoizedMacro.self,
+    "Memoize": MemoizeMacro.self,
+    "memoized": MemoizedExprMacro.self,
 ]
 #endif
 
-final class MemoizedMacroExpansionTests: XCTestCase {
+// MARK: - @Memoize Member Macro Tests
 
-    // MARK: - Single Dependency Expansion
+final class MemoizeMacroExpansionTests: XCTestCase {
+
+    func testMemoizeGeneratesStorage() throws {
+        #if canImport(MemoizedMacros)
+        assertMacroExpansion(
+            """
+            @Memoize
+            class Theme {
+                var colorScheme: String = "dark"
+            }
+            """,
+            expandedSource: """
+            class Theme {
+                var colorScheme: String = "dark"
+
+                private let _memoized = MemoizedStorage()
+            }
+            """,
+            macros: testMacros
+        )
+        #else
+        throw XCTSkip("macros are only supported when running tests for the host platform")
+        #endif
+    }
+
+    func testMemoizeOnStruct() throws {
+        #if canImport(MemoizedMacros)
+        assertMacroExpansion(
+            """
+            @Memoize
+            struct Settings {
+                var threshold: Int = 10
+            }
+            """,
+            expandedSource: """
+            struct Settings {
+                var threshold: Int = 10
+
+                private let _memoized = MemoizedStorage()
+            }
+            """,
+            macros: testMacros
+        )
+        #else
+        throw XCTSkip("macros are only supported when running tests for the host platform")
+        #endif
+    }
+}
+
+// MARK: - #memoized Expression Macro Tests
+
+final class MemoizedExprMacroExpansionTests: XCTestCase {
 
     func testSingleDependencyExpansion() throws {
         #if canImport(MemoizedMacros)
         assertMacroExpansion(
             """
             class Theme {
-                var colorMode: String = "dark"
-
-                @Memoized(\\.colorMode)
-                var palette: [String] = generatePalette(colorMode)
+                var colorScheme: String = "dark"
+                var style: String {
+                    #memoized(\\Self.colorScheme) {
+                        "hello \\(self.colorScheme)"
+                    }
+                }
             }
             """,
             expandedSource: """
             class Theme {
-                var colorMode: String = "dark"
-                var palette: [String] {
-                    get {
-                        let deps = self.colorMode
-                        if let cached = _memoized_palette.value(for: deps) {
-                            return cached
+                var colorScheme: String = "dark"
+                var style: String {
+                    {
+                        let _box: MemoizedBox = _memoized.box(for: "style")
+                        let _deps = self.colorScheme
+                        if let _cached = _box.value(for: _deps) {
+                            return _cached
                         }
-                        let value = generatePalette(colorMode)
-                        _memoized_palette.store(value: value, deps: deps)
-                        return value
-                    }
+                        let _value = {
+                            "hello \\(self.colorScheme)"
+                        }()
+                        _box.store(value: _value, deps: _deps)
+                        return _value
+                    }()
                 }
-
-                private let _memoized_palette = MemoizedBox<[String]>()
             }
             """,
             macros: testMacros
@@ -49,38 +104,39 @@ final class MemoizedMacroExpansionTests: XCTestCase {
         throw XCTSkip("macros are only supported when running tests for the host platform")
         #endif
     }
-
-    // MARK: - Multiple Dependencies Expansion
 
     func testMultipleDependenciesExpansion() throws {
         #if canImport(MemoizedMacros)
         assertMacroExpansion(
             """
             class Theme {
-                var colorMode: String = "dark"
+                var colorScheme: String = "dark"
                 var fontSize: Double = 14.0
-
-                @Memoized(\\.colorMode, \\.fontSize)
-                var style: String = "\\(colorMode)-\\(fontSize)"
+                var palette: String {
+                    #memoized(\\Self.colorScheme, \\Self.fontSize) {
+                        "\\(self.colorScheme)-\\(self.fontSize)"
+                    }
+                }
             }
             """,
             expandedSource: """
             class Theme {
-                var colorMode: String = "dark"
+                var colorScheme: String = "dark"
                 var fontSize: Double = 14.0
-                var style: String {
-                    get {
-                        let deps = (self.colorMode, self.fontSize)
-                        if let cached = _memoized_style.value(for: deps) {
-                            return cached
+                var palette: String {
+                    {
+                        let _box: MemoizedBox = _memoized.box(for: "palette")
+                        let _deps = Deps2(self.colorScheme, self.fontSize)
+                        if let _cached = _box.value(for: _deps) {
+                            return _cached
                         }
-                        let value = "\\(colorMode)-\\(fontSize)"
-                        _memoized_style.store(value: value, deps: deps)
-                        return value
-                    }
+                        let _value = {
+                            "\\(self.colorScheme)-\\(self.fontSize)"
+                        }()
+                        _box.store(value: _value, deps: _deps)
+                        return _value
+                    }()
                 }
-
-                private let _memoized_style = MemoizedBox<String>()
             }
             """,
             macros: testMacros
@@ -89,8 +145,6 @@ final class MemoizedMacroExpansionTests: XCTestCase {
         throw XCTSkip("macros are only supported when running tests for the host platform")
         #endif
     }
-
-    // MARK: - Struct Expansion
 
     func testStructExpansion() throws {
         #if canImport(MemoizedMacros)
@@ -98,27 +152,30 @@ final class MemoizedMacroExpansionTests: XCTestCase {
             """
             struct Settings {
                 var threshold: Int = 10
-
-                @Memoized(\\.threshold)
-                var label: String = "Threshold: \\(threshold)"
+                var label: String {
+                    #memoized(\\Self.threshold) {
+                        "Threshold: \\(self.threshold)"
+                    }
+                }
             }
             """,
             expandedSource: """
             struct Settings {
                 var threshold: Int = 10
                 var label: String {
-                    get {
-                        let deps = self.threshold
-                        if let cached = _memoized_label.value(for: deps) {
-                            return cached
+                    {
+                        let _box: MemoizedBox = _memoized.box(for: "label")
+                        let _deps = self.threshold
+                        if let _cached = _box.value(for: _deps) {
+                            return _cached
                         }
-                        let value = "Threshold: \\(threshold)"
-                        _memoized_label.store(value: value, deps: deps)
-                        return value
-                    }
+                        let _value = {
+                            "Threshold: \\(self.threshold)"
+                        }()
+                        _box.store(value: _value, deps: _deps)
+                        return _value
+                    }()
                 }
-
-                private let _memoized_label = MemoizedBox<String>()
             }
             """,
             macros: testMacros
@@ -130,50 +187,29 @@ final class MemoizedMacroExpansionTests: XCTestCase {
 
     // MARK: - Diagnostics
 
-    func testErrorOnComputedProperty() throws {
-        #if canImport(MemoizedMacros)
-        assertMacroExpansion(
-            """
-            class Foo {
-                @Memoized(\\.x)
-                var value: Int {
-                    42
-                }
-            }
-            """,
-            expandedSource: """
-            class Foo {
-                var value: Int {
-                    42
-                }
-            }
-            """,
-            diagnostics: [
-                DiagnosticSpec(message: "@Memoized requires a stored property with an initializer expression", line: 2, column: 5),
-            ],
-            macros: testMacros
-        )
-        #else
-        throw XCTSkip("macros are only supported when running tests for the host platform")
-        #endif
-    }
-
     func testErrorOnMissingDeps() throws {
         #if canImport(MemoizedMacros)
         assertMacroExpansion(
             """
             class Foo {
-                @Memoized()
-                var value: Int = 42
+                var value: Int {
+                    #memoized() {
+                        42
+                    }
+                }
             }
             """,
             expandedSource: """
             class Foo {
-                var value: Int = 42
+                var value: Int {
+                    #memoized() {
+                        42
+                    }
+                }
             }
             """,
             diagnostics: [
-                DiagnosticSpec(message: "@Memoized requires at least one dependency key path", line: 2, column: 5),
+                DiagnosticSpec(message: "#memoized requires at least one dependency key path", line: 3, column: 9),
             ],
             macros: testMacros
         )
@@ -186,6 +222,26 @@ final class MemoizedMacroExpansionTests: XCTestCase {
 // MARK: - Runtime Behavior Tests
 
 import Memoized
+
+final class MemoizedStorageTests: XCTestCase {
+
+    func testBoxCreation() {
+        let storage = MemoizedStorage()
+        let box1: MemoizedBox<Int> = storage.box(for: "a")
+        let box2: MemoizedBox<Int> = storage.box(for: "a")
+        // Same key returns the same box
+        box1.store(value: 42, deps: "x")
+        XCTAssertEqual(box2.value(for: "x"), 42)
+    }
+
+    func testDifferentKeysAreSeparate() {
+        let storage = MemoizedStorage()
+        let boxA: MemoizedBox<Int> = storage.box(for: "a")
+        let boxB: MemoizedBox<Int> = storage.box(for: "b")
+        boxA.store(value: 1, deps: "x")
+        XCTAssertNil(boxB.value(for: "x"))
+    }
+}
 
 final class MemoizedBoxTests: XCTestCase {
 
@@ -207,23 +263,19 @@ final class MemoizedBoxTests: XCTestCase {
     }
 
     func testMultipleDeps() {
-        struct Pair: Equatable {
-            let mode: String
-            let size: Double
-        }
         let box = MemoizedBox<String>()
-        box.store(value: "cached", deps: Pair(mode: "dark", size: 14.0))
-        XCTAssertEqual(box.value(for: Pair(mode: "dark", size: 14.0)), "cached")
-        XCTAssertNil(box.value(for: Pair(mode: "dark", size: 16.0)))
-        XCTAssertNil(box.value(for: Pair(mode: "light", size: 14.0)))
+        let deps = Deps2("dark", 14.0)
+        box.store(value: "cached", deps: deps)
+        XCTAssertEqual(box.value(for: Deps2("dark", 14.0)), "cached")
+        XCTAssertNil(box.value(for: Deps2("dark", 16.0)))
+        XCTAssertNil(box.value(for: Deps2("light", 14.0)))
     }
 
-    func testRestore() {
+    func testCacheInvalidation() {
         let box = MemoizedBox<Int>()
         box.store(value: 1, deps: "dark")
         XCTAssertEqual(box.value(for: "dark"), 1)
 
-        // Simulate invalidation + recompute
         box.store(value: 2, deps: "light")
         XCTAssertNil(box.value(for: "dark"))
         XCTAssertEqual(box.value(for: "light"), 2)
@@ -234,15 +286,16 @@ final class MemoizedBoxTests: XCTestCase {
     func testNonMutatingGetterOnStruct() {
         struct Counter {
             var input: Int
-            private let _memoized_doubled = MemoizedBox<Int>()
+            private let _memoized = MemoizedStorage()
 
             var doubled: Int {
+                let _box: MemoizedBox<Int> = _memoized.box(for: "doubled")
                 let deps = input
-                if let cached = _memoized_doubled.value(for: deps) {
+                if let cached = _box.value(for: deps) {
                     return cached
                 }
                 let value = input * 2
-                _memoized_doubled.store(value: value, deps: deps)
+                _box.store(value: value, deps: deps)
                 return value
             }
         }
@@ -256,18 +309,35 @@ final class MemoizedBoxTests: XCTestCase {
     func testStructCopySharesCache() {
         struct Wrapper {
             var dep: String
-            let box = MemoizedBox<Int>()
+            let storage = MemoizedStorage()
         }
 
         let a = Wrapper(dep: "x")
-        a.box.store(value: 42, deps: "x")
+        let box: MemoizedBox<Int> = a.storage.box(for: "test")
+        box.store(value: 42, deps: "x")
 
-        // Copy shares the same box reference
+        // Copy shares the same storage reference
         let b = a
-        XCTAssertEqual(b.box.value(for: "x"), 42)
+        let boxB: MemoizedBox<Int> = b.storage.box(for: "test")
+        XCTAssertEqual(boxB.value(for: "x"), 42)
+    }
+}
 
-        // Mutating through one copy is visible to the other
-        b.box.store(value: 99, deps: "y")
-        XCTAssertEqual(a.box.value(for: "y"), 99)
+final class DepsWrapperTests: XCTestCase {
+
+    func testDeps2Equality() {
+        XCTAssertEqual(Deps2("a", 1), Deps2("a", 1))
+        XCTAssertNotEqual(Deps2("a", 1), Deps2("b", 1))
+        XCTAssertNotEqual(Deps2("a", 1), Deps2("a", 2))
+    }
+
+    func testDeps3Equality() {
+        XCTAssertEqual(Deps3("a", 1, true), Deps3("a", 1, true))
+        XCTAssertNotEqual(Deps3("a", 1, true), Deps3("a", 1, false))
+    }
+
+    func testDeps4Equality() {
+        XCTAssertEqual(Deps4("a", 1, true, 3.14), Deps4("a", 1, true, 3.14))
+        XCTAssertNotEqual(Deps4("a", 1, true, 3.14), Deps4("a", 1, true, 2.71))
     }
 }

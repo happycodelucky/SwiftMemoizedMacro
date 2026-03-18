@@ -3,177 +3,141 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
-// MARK: - @Memoized Attached Macro
+// MARK: - @Memoize Member Macro
 
-/// Transforms a stored property into a memoized computed property that caches
-/// its result and only recomputes when the specified dependency key path values change.
+/// Generates shared memoization storage for a type.
 ///
-/// Usage:
+/// Expands to:
 ///
-///     @Observable
-///     class Theme {
-///         var colorMode: ColorMode = .dark
-///         var accentHue: Double = 210
+///     private let _memoized = MemoizedStorage()
 ///
-///         @Memoized(\.colorMode)
-///         var resolvedPalette: Palette = Palette.generate(mode: colorMode, hue: accentHue)
-///     }
-///
-/// For multi-line computations, use a closure:
-///
-///     @Memoized(\.colorMode, \.accentHue)
-///     var resolvedPalette: Palette = {
-///         Palette.generate(mode: colorMode, hue: accentHue)
-///     }()
-///
-/// Expands roughly to:
-///
-///     private let _memoized_resolvedPalette = MemoizedBox<Palette>()
-///     var resolvedPalette: Palette {
-///         get {
-///             let deps = self.colorMode
-///             if let cached = _memoized_resolvedPalette.value(for: deps) {
-///                 return cached
-///             }
-///             let value = Palette.generate(mode: colorMode, hue: accentHue)
-///             _memoized_resolvedPalette.store(value: value, deps: deps)
-///             return value
-///         }
-///     }
-///
-public struct MemoizedMacro: AccessorMacro, PeerMacro {
-
-    // MARK: - AccessorMacro (provides the memoized getter)
-
+public struct MemoizeMacro: MemberMacro {
     public static func expansion(
         of node: AttributeSyntax,
-        providingAccessorsOf declaration: some DeclSyntaxProtocol,
+        providingMembersOf declaration: some DeclGroupSyntax,
+        conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
-    ) throws -> [AccessorDeclSyntax] {
-        guard let varDecl = declaration.as(VariableDeclSyntax.self),
-              let binding = varDecl.bindings.first,
-              let identifier = binding.pattern.as(IdentifierPatternSyntax.self),
-              binding.typeAnnotation != nil
-        else {
-            throw MacroError("@Memoized can only be applied to a property with an explicit type annotation")
+    ) throws -> [DeclSyntax] {
+        let storageDecl: DeclSyntax = """
+            private let _memoized = MemoizedStorage()
+            """
+
+        return [storageDecl]
+    }
+}
+
+// MARK: - #memoized Freestanding Expression Macro
+
+/// Expands a `#memoized` call into a cache-check + compute pattern.
+///
+/// Input:
+///
+///     #memoized(\Self.colorScheme) {
+///         LinearGradient(...)
+///     }
+///
+/// Expands to:
+///
+///     {
+///         let _box: MemoizedBox<ReturnType> = _memoized.box(for: "propertyName")
+///         let _deps = self.colorScheme
+///         if let _cached = _box.value(for: _deps) {
+///             return _cached
+///         }
+///         let _value = { LinearGradient(...) }()
+///         _box.store(value: _value, deps: _deps)
+///         return _value
+///     }()
+///
+public struct MemoizedExprMacro: ExpressionMacro {
+    public static func expansion(
+        of node: some FreestandingMacroExpansionSyntax,
+        in context: some MacroExpansionContext
+    ) throws -> ExprSyntax {
+        // Extract arguments: key paths and trailing closure
+        let arguments = node.arguments
+        let trailingClosure = node.trailingClosure
+
+        guard let closure = trailingClosure else {
+            throw MacroError("#memoized requires a trailing closure containing the computation")
         }
 
-        let propName = identifier.identifier.text
-        let keyPaths = try extractKeyPaths(from: node)
+        // Extract key paths from arguments (everything before the trailing closure)
+        let keyPaths = try extractKeyPaths(from: arguments)
         guard !keyPaths.isEmpty else {
-            throw MacroError("@Memoized requires at least one dependency key path")
+            throw MacroError("#memoized requires at least one dependency key path")
         }
 
-        // Require a stored property with initializer (not a computed property)
-        guard binding.initializer != nil else {
-            throw MacroError("@Memoized requires a stored property with an initializer expression")
-        }
+        // Get the enclosing property name from lexical context
+        let propName = try extractPropertyName(from: context)
 
-        let computeExpr = try extractComputeExpression(from: binding)
-        let storageName = "_memoized_\(propName)"
-
+        // Build the deps expression
         let depsExpr: String
         if keyPaths.count == 1 {
             depsExpr = "self.\(keyPaths[0])"
         } else {
             let joined = keyPaths.map { "self.\($0)" }.joined(separator: ", ")
-            depsExpr = "(\(joined))"
+            let depsWrapper = "Deps\(keyPaths.count)"
+            depsExpr = "\(depsWrapper)(\(joined))"
         }
 
-        let accessor: AccessorDeclSyntax = """
-            get {
-                let deps = \(raw: depsExpr)
-                if let cached = \(raw: storageName).value(for: deps) {
-                    return cached
+        // Get the closure body
+        let closureBody = closure.statements.trimmedDescription
+
+        // Build the expansion as an immediately-invoked closure
+        let expansion: ExprSyntax = """
+            {
+                let _box: MemoizedBox = _memoized.box(for: \(literal: propName))
+                let _deps = \(raw: depsExpr)
+                if let _cached = _box.value(for: _deps) {
+                    return _cached
                 }
-                let value = \(raw: computeExpr)
-                \(raw: storageName).store(value: value, deps: deps)
-                return value
-            }
+                let _value = { \(raw: closureBody) }()
+                _box.store(value: _value, deps: _deps)
+                return _value
+            }()
             """
 
-        return [accessor]
-    }
-
-    // MARK: - PeerMacro (generates backing storage)
-
-    public static func expansion(
-        of node: AttributeSyntax,
-        providingPeersOf declaration: some DeclSyntaxProtocol,
-        in context: some MacroExpansionContext
-    ) throws -> [DeclSyntax] {
-        guard let varDecl = declaration.as(VariableDeclSyntax.self),
-              let binding = varDecl.bindings.first,
-              let identifier = binding.pattern.as(IdentifierPatternSyntax.self),
-              let typeAnnotation = binding.typeAnnotation
-        else {
-            return []
-        }
-
-        let propName = identifier.identifier.text
-        let valueType = typeAnnotation.type.trimmedDescription
-        let keyPaths = try extractKeyPaths(from: node)
-
-        guard !keyPaths.isEmpty else { return [] }
-
-        // Only generate peers for stored properties with initializers
-        guard binding.initializer != nil else { return [] }
-
-        let storageName = "_memoized_\(propName)"
-
-        // Generate: private let _memoized_X = MemoizedBox<ValueType>()
-        let storageDecl: DeclSyntax = """
-            private let \(raw: storageName) = MemoizedBox<\(raw: valueType)>()
-            """
-
-        return [storageDecl]
-    }
-
-    // MARK: - Compute Expression Extraction
-
-    /// Extracts the computation expression from the property's initializer.
-    ///
-    /// Supports:
-    /// - Simple initializer: `var x: T = expression`
-    /// - Closure initializer: `var x: T = { ... }()`
-    private static func extractComputeExpression(from binding: PatternBindingSyntax) throws -> String {
-        guard let initializer = binding.initializer else {
-            throw MacroError("@Memoized requires a stored property with an initializer expression")
-        }
-
-        // Handle closure initializer: `{ ... }()`
-        // Strip the trailing `()` and the outer braces to get the body
-        if let closureExpr = initializer.value.as(FunctionCallExprSyntax.self),
-           let closure = closureExpr.calledExpression.as(ClosureExprSyntax.self) {
-            return closure.statements.trimmedDescription
-        }
-
-        return initializer.value.trimmedDescription
+        return expansion
     }
 
     // MARK: - Key Path Extraction
 
-    private static func extractKeyPaths(from node: AttributeSyntax) throws -> [String] {
-        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self) else {
-            return []
-        }
+    private static func extractKeyPaths(from arguments: LabeledExprListSyntax?) throws -> [String] {
+        guard let arguments else { return [] }
 
         var keyPaths: [String] = []
 
         for arg in arguments {
             let expr = arg.expression.trimmedDescription
-            // Handle \. prefix for key path expressions
-            if expr.hasPrefix("\\.") {
-                keyPaths.append(String(expr.dropFirst(2)))
-            } else if expr.hasPrefix("\\Self.") {
+            // Handle \Self. prefix for key path expressions
+            if expr.hasPrefix("\\Self.") {
                 keyPaths.append(String(expr.dropFirst(6)))
+            } else if expr.hasPrefix("\\.") {
+                keyPaths.append(String(expr.dropFirst(2)))
             } else {
-                // Assume it's a bare property name
-                keyPaths.append(expr)
+                // Skip non-key-path arguments (e.g., the body label)
+                continue
             }
         }
 
         return keyPaths
+    }
+
+    // MARK: - Property Name Extraction
+
+    private static func extractPropertyName(from context: some MacroExpansionContext) throws -> String {
+        // Walk the lexical context to find the enclosing pattern binding.
+        // The macro system exposes PatternBindingSyntax (not VariableDeclSyntax)
+        // as a lexical context, with its accessor block and initializer stripped.
+        for syntax in context.lexicalContext {
+            if let patternBinding = syntax.as(PatternBindingSyntax.self),
+               let identifier = patternBinding.pattern.as(IdentifierPatternSyntax.self) {
+                return identifier.identifier.text
+            }
+        }
+
+        throw MacroError("#memoized must be used inside a computed property getter")
     }
 }
 
@@ -191,6 +155,7 @@ struct MacroError: Error, CustomStringConvertible {
 @main
 struct MemoizedPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
-        MemoizedMacro.self,
+        MemoizeMacro.self,
+        MemoizedExprMacro.self,
     ]
 }
