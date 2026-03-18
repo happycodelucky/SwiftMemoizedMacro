@@ -134,5 +134,8 @@ Explicit deps mean zero runtime overhead for observation tracking, no `withObser
 **Why a reference-type box?**
 `MemoizedBox<Value>` is a class so the getter can update the cache without mutating `self`, making it work in both classes and structs (including SwiftUI views). It erases the `Deps` type via a closure so the macro doesn't need to spell out complex tuple types. The `Deps` type only needs to be `Equatable`.
 
+**Why stored properties, not computed properties?**
+Swift's `@attached(accessor)` macro can only *add* accessors to a declaration — it cannot remove or replace existing ones. Applying it to a computed property that already has a getter body results in two conflicting `get` blocks. On a stored property, the macro's accessor cleanly replaces the storage, converting it into a computed property. This is the same pattern `@Observable` uses.
+
 **Why not a property wrapper?**
 Swift's `@propertyWrapper` has no access to `self` of the enclosing type — `wrappedValue` can't read sibling properties. The `_enclosingInstance` static subscript is class-only and uses non-public API, ruling out structs and SwiftUI views. A macro can rewrite the getter to capture `self.<dep>` directly, making it strictly more powerful for this use case.
