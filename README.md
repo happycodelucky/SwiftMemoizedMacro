@@ -19,7 +19,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/happycodelucky/SwiftMemoizedMacro.git", from: "0.5.0"),
+    .package(url: "https://github.com/happycodelucky/SwiftMemoizedMacro.git", from: "0.5.1"),
 ],
 targets: [
     .target(
