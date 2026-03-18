@@ -83,18 +83,9 @@ final class MemoizedExprMacroExpansionTests: XCTestCase {
             class Theme {
                 var colorScheme: String = "dark"
                 var style: String {
-                    {
-                        let _box: MemoizedBox = _memoized.box(for: "style")
-                        let _deps = self.colorScheme
-                        if let _cached = _box.value(for: _deps) {
-                            return _cached
-                        }
-                        let _value = {
-                            "hello \\(self.colorScheme)"
-                        }()
-                        _box.store(value: _value, deps: _deps)
-                        return _value
-                    }()
+                    _memoized.memoize(for: "colorScheme", deps: self.colorScheme) {
+                        "hello \\(self.colorScheme)"
+                    }
                 }
             }
             """,
@@ -124,18 +115,9 @@ final class MemoizedExprMacroExpansionTests: XCTestCase {
                 var colorScheme: String = "dark"
                 var fontSize: Double = 14.0
                 var palette: String {
-                    {
-                        let _box: MemoizedBox = _memoized.box(for: "palette")
-                        let _deps = Deps2(self.colorScheme, self.fontSize)
-                        if let _cached = _box.value(for: _deps) {
-                            return _cached
-                        }
-                        let _value = {
-                            "\\(self.colorScheme)-\\(self.fontSize)"
-                        }()
-                        _box.store(value: _value, deps: _deps)
-                        return _value
-                    }()
+                    _memoized.memoize(for: "colorScheme,fontSize", deps: Deps2(self.colorScheme, self.fontSize)) {
+                        "\\(self.colorScheme)-\\(self.fontSize)"
+                    }
                 }
             }
             """,
@@ -163,18 +145,9 @@ final class MemoizedExprMacroExpansionTests: XCTestCase {
             struct Settings {
                 var threshold: Int = 10
                 var label: String {
-                    {
-                        let _box: MemoizedBox = _memoized.box(for: "label")
-                        let _deps = self.threshold
-                        if let _cached = _box.value(for: _deps) {
-                            return _cached
-                        }
-                        let _value = {
-                            "Threshold: \\(self.threshold)"
-                        }()
-                        _box.store(value: _value, deps: _deps)
-                        return _value
-                    }()
+                    _memoized.memoize(for: "threshold", deps: self.threshold) {
+                        "Threshold: \\(self.threshold)"
+                    }
                 }
             }
             """,
@@ -339,5 +312,40 @@ final class DepsWrapperTests: XCTestCase {
     func testDeps4Equality() {
         XCTAssertEqual(Deps4("a", 1, true, 3.14), Deps4("a", 1, true, 3.14))
         XCTAssertNotEqual(Deps4("a", 1, true, 3.14), Deps4("a", 1, true, 2.71))
+    }
+}
+
+// MARK: - Macro Integration Tests (actual macro compilation)
+
+@Memoizable
+class TestTheme {
+    var colorScheme: String = "dark"
+
+    var style: String {
+        #memoized(\Self.colorScheme) {
+            "style-\(self.colorScheme)"
+        }
+    }
+}
+
+final class MacroIntegrationTests: XCTestCase {
+
+    func testMemoizedMacroCompiles() {
+        let theme = TestTheme()
+        XCTAssertEqual(theme.style, "style-dark")
+    }
+
+    func testMemoizedMacroCaches() {
+        let theme = TestTheme()
+        let first = theme.style
+        let second = theme.style
+        XCTAssertEqual(first, second)
+    }
+
+    func testMemoizedMacroInvalidatesOnChange() {
+        let theme = TestTheme()
+        XCTAssertEqual(theme.style, "style-dark")
+        theme.colorScheme = "light"
+        XCTAssertEqual(theme.style, "style-light")
     }
 }

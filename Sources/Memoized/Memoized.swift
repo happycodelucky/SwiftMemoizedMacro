@@ -84,6 +84,25 @@ public final class MemoizedStorage: @unchecked Sendable {
         boxes[key] = new
         return new
     }
+
+    /// Memoizes a computation, returning the cached value if dependencies match
+    /// or computing and caching a new value otherwise.
+    ///
+    /// This is the primary API used by the `#memoized` macro expansion.
+    /// The `Value` type is inferred from the `compute` closure's return type.
+    public func memoize<Deps: Equatable, Value>(
+        for key: String,
+        deps: Deps,
+        compute: () -> Value
+    ) -> Value {
+        let box: MemoizedBox<Value> = self.box(for: key)
+        if let cached = box.value(for: deps) {
+            return cached
+        }
+        let value = compute()
+        box.store(value: value, deps: deps)
+        return value
+    }
 }
 
 /// Reference-type memoization cache that can be mutated from a non-mutating

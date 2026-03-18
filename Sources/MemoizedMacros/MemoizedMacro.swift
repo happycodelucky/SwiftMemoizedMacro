@@ -28,7 +28,7 @@ public struct MemoizableMacro: MemberMacro {
 
 // MARK: - #memoized Freestanding Expression Macro
 
-/// Expands a `#memoized` call into a cache-check + compute pattern.
+/// Expands a `#memoized` call into a `MemoizedStorage.memoize()` invocation.
 ///
 /// Input:
 ///
@@ -38,16 +38,9 @@ public struct MemoizableMacro: MemberMacro {
 ///
 /// Expands to:
 ///
-///     {
-///         let _box: MemoizedBox<ReturnType> = _memoized.box(for: "propertyName")
-///         let _deps = self.colorScheme
-///         if let _cached = _box.value(for: _deps) {
-///             return _cached
-///         }
-///         let _value = { LinearGradient(...) }()
-///         _box.store(value: _value, deps: _deps)
-///         return _value
-///     }()
+///     _memoized.memoize(for: "colorScheme", deps: self.colorScheme) {
+///         LinearGradient(...)
+///     }
 ///
 public struct MemoizedExprMacro: ExpressionMacro {
     public static func expansion(
@@ -68,9 +61,6 @@ public struct MemoizedExprMacro: ExpressionMacro {
             throw MacroError("#memoized requires at least one dependency key path")
         }
 
-        // Get the enclosing property name from lexical context
-        let propName = try extractPropertyName(from: context)
-
         // Build the deps expression
         let depsExpr: String
         if keyPaths.count == 1 {
@@ -81,21 +71,18 @@ public struct MemoizedExprMacro: ExpressionMacro {
             depsExpr = "\(depsWrapper)(\(joined))"
         }
 
+        // Build a stable storage key from the key paths
+        let storageKey = keyPaths.joined(separator: ",")
+
         // Get the closure body
         let closureBody = closure.statements.trimmedDescription
 
-        // Build the expansion as an immediately-invoked closure
+        // Build the expansion that uses MemoizedStorage.memoize() which handles
+        // the full cache-check + compute pattern and infers the Value type from the closure.
         let expansion: ExprSyntax = """
-            {
-                let _box: MemoizedBox = _memoized.box(for: \(literal: propName))
-                let _deps = \(raw: depsExpr)
-                if let _cached = _box.value(for: _deps) {
-                    return _cached
-                }
-                let _value = { \(raw: closureBody) }()
-                _box.store(value: _value, deps: _deps)
-                return _value
-            }()
+            _memoized.memoize(for: \(literal: storageKey), deps: \(raw: depsExpr)) {
+                \(raw: closureBody)
+            }
             """
 
         return expansion
@@ -124,21 +111,6 @@ public struct MemoizedExprMacro: ExpressionMacro {
         return keyPaths
     }
 
-    // MARK: - Property Name Extraction
-
-    private static func extractPropertyName(from context: some MacroExpansionContext) throws -> String {
-        // Walk the lexical context to find the enclosing pattern binding.
-        // The macro system exposes PatternBindingSyntax (not VariableDeclSyntax)
-        // as a lexical context, with its accessor block and initializer stripped.
-        for syntax in context.lexicalContext {
-            if let patternBinding = syntax.as(PatternBindingSyntax.self),
-               let identifier = patternBinding.pattern.as(IdentifierPatternSyntax.self) {
-                return identifier.identifier.text
-            }
-        }
-
-        throw MacroError("#memoized must be used inside a computed property getter")
-    }
 }
 
 // MARK: - Error Type

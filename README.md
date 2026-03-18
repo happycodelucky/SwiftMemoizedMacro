@@ -146,11 +146,11 @@ Applied to a class or struct, generates shared memoization storage:
 private let _memoized = MemoizedStorage()
 ```
 
-`MemoizedStorage` is a reference type that holds per-property `MemoizedBox` caches keyed by property name.
+`MemoizedStorage` is a reference type that holds per-property `MemoizedBox` caches keyed by dependency key paths. It exposes a `memoize(for:deps:compute:)` method that handles the full cache-check + compute pattern.
 
 ### `#memoized` (expression-level)
 
-Used inside a computed property getter, expands to a cache-check pattern:
+Used inside a computed property getter, expands to a `memoize()` call on the shared storage:
 
 ```swift
 // You write:
@@ -162,24 +162,22 @@ var palette: Palette {
 
 // Macro expands to:
 var palette: Palette {
-    {
-        let _box: MemoizedBox = _memoized.box(for: "palette")
-        let _deps = self.colorMode
-        if let _cached = _box.value(for: _deps) {
-            return _cached
-        }
-        let _value = {
-            Palette.generate(mode: colorMode)
-        }()
-        _box.store(value: _value, deps: _deps)
-        return _value
-    }()
+    _memoized.memoize(for: "colorMode", deps: self.colorMode) {
+        Palette.generate(mode: colorMode)
+    }
 }
 ```
 
-The property name is automatically extracted from the enclosing lexical context — you don't need to specify it.
+The `memoize(for:deps:compute:)` method handles the full cache-check pattern: it returns the cached value if deps match, or computes, caches, and returns a new value otherwise. The `Value` type is inferred from the closure's return type.
 
-For multiple dependencies, the macro wraps them in an `Equatable` struct (`Deps2`, `Deps3`, `Deps4`) since Swift tuples cannot conform to protocols.
+For multiple dependencies, the macro wraps them in an `Equatable` struct (`Deps2`, `Deps3`, `Deps4`) since Swift tuples cannot conform to protocols:
+
+```swift
+// Two deps expands to:
+_memoized.memoize(for: "colorMode,accentHue", deps: Deps2(self.colorMode, self.accentHue)) {
+    Palette.generate(mode: colorMode, hue: accentHue)
+}
+```
 
 ## Struct Copy Behavior
 
