@@ -1,35 +1,37 @@
 // MARK: - Macro Declaration
 
-/// Memoizes a computed getter, caching the result and only recomputing
-/// when the values at the specified dependency key paths change.
+/// Memoizes a property, caching the result and only recomputing when the
+/// values at the specified dependency key paths change.
 ///
-/// Apply to a computed property on a class or struct. Pass one or more
-/// key paths identifying which properties the computation depends on.
+/// Apply to a stored property with an initializer expression on a class or struct.
+/// Pass one or more key paths identifying which properties the computation depends on.
 ///
 /// ## Single Dependency
 ///
 ///     @Memoized(\.colorMode)
-///     var resolvedPalette: Palette {
-///         Palette.generate(mode: colorMode)
-///     }
+///     var resolvedPalette: Palette = Palette.generate(mode: colorMode)
 ///
 /// ## Multiple Dependencies
 ///
 ///     @Memoized(\.colorMode, \.accentHue)
-///     var resolvedPalette: Palette {
+///     var resolvedPalette: Palette = Palette.generate(mode: colorMode, hue: accentHue)
+///
+/// ## Multi-line Computation (closure syntax)
+///
+///     @Memoized(\.colorMode, \.accentHue)
+///     var resolvedPalette: Palette = {
 ///         Palette.generate(mode: colorMode, hue: accentHue)
-///     }
+///     }()
 ///
 /// The macro expands to:
-/// - A private `MemoizedStorage` backing field (holds cached deps + value)
-/// - A private `_compute_<name>()` function (the original getter body)
-/// - A replacement getter that checks deps before recomputing
+/// - A private `MemoizedBox` backing field (holds cached deps + value)
+/// - A `get` accessor that checks deps before recomputing
 ///
 /// > Important: The dependency key paths must point to `Equatable` values.
 ///   The property must have an explicit type annotation.
 ///
 @attached(accessor, names: named(get))
-@attached(peer, names: prefixed(`_memoized_`), prefixed(`_compute_`))
+@attached(peer, names: prefixed(`_memoized_`))
 public macro Memoized(_ deps: Any...) = #externalMacro(module: "MemoizedMacros", type: "MemoizedMacro")
 
 // MARK: - Runtime Support

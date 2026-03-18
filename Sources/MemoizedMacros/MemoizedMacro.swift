@@ -5,8 +5,8 @@ import SwiftSyntaxMacros
 
 // MARK: - @Memoized Attached Macro
 
-/// Transforms a computed getter into a memoized getter that caches its result
-/// and only recomputes when the specified dependency key path values change.
+/// Transforms a stored property into a memoized computed property that caches
+/// its result and only recomputes when the specified dependency key path values change.
 ///
 /// Usage:
 ///
@@ -16,30 +16,34 @@ import SwiftSyntaxMacros
 ///         var accentHue: Double = 210
 ///
 ///         @Memoized(\.colorMode)
-///         var resolvedPalette: Palette {
-///             Palette.generate(mode: colorMode, hue: accentHue)
-///         }
+///         var resolvedPalette: Palette = Palette.generate(mode: colorMode, hue: accentHue)
 ///     }
+///
+/// For multi-line computations, use a closure:
+///
+///     @Memoized(\.colorMode, \.accentHue)
+///     var resolvedPalette: Palette = {
+///         Palette.generate(mode: colorMode, hue: accentHue)
+///     }()
 ///
 /// Expands roughly to:
 ///
 ///     private let _memoized_resolvedPalette = MemoizedBox<Palette>()
 ///     var resolvedPalette: Palette {
-///         let deps = self.colorMode
-///         if let cached = _memoized_resolvedPalette.value(for: deps) {
-///             return cached
+///         get {
+///             let deps = self.colorMode
+///             if let cached = _memoized_resolvedPalette.value(for: deps) {
+///                 return cached
+///             }
+///             let value = Palette.generate(mode: colorMode, hue: accentHue)
+///             _memoized_resolvedPalette.store(value: value, deps: deps)
+///             return value
 ///         }
-///         let value = _compute_resolvedPalette()
-///         _memoized_resolvedPalette.store(value: value, deps: deps)
-///         return value
-///     }
-///     private func _compute_resolvedPalette() -> Palette {
-///         Palette.generate(mode: colorMode, hue: accentHue)
 ///     }
 ///
 public struct MemoizedMacro: AccessorMacro, PeerMacro {
 
-    // MARK: - AccessorMacro (replaces the getter)
+    // MARK: - AccessorMacro (provides the memoized getter)
 
     public static func expansion(
         of node: AttributeSyntax,
@@ -51,18 +55,22 @@ public struct MemoizedMacro: AccessorMacro, PeerMacro {
               let identifier = binding.pattern.as(IdentifierPatternSyntax.self),
               binding.typeAnnotation != nil
         else {
-            throw MacroError("@Memoized can only be applied to a computed property with an explicit type annotation")
+            throw MacroError("@Memoized can only be applied to a property with an explicit type annotation")
         }
 
         let propName = identifier.identifier.text
         let keyPaths = try extractKeyPaths(from: node)
-
         guard !keyPaths.isEmpty else {
             throw MacroError("@Memoized requires at least one dependency key path")
         }
 
+        // Require a stored property with initializer (not a computed property)
+        guard binding.initializer != nil else {
+            throw MacroError("@Memoized requires a stored property with an initializer expression")
+        }
+
+        let computeExpr = try extractComputeExpression(from: binding)
         let storageName = "_memoized_\(propName)"
-        let computeFnName = "_compute_\(propName)"
 
         let depsExpr: String
         if keyPaths.count == 1 {
@@ -73,19 +81,21 @@ public struct MemoizedMacro: AccessorMacro, PeerMacro {
         }
 
         let accessor: AccessorDeclSyntax = """
-            let deps = \(raw: depsExpr)
-            if let cached = \(raw: storageName).value(for: deps) {
-                return cached
+            get {
+                let deps = \(raw: depsExpr)
+                if let cached = \(raw: storageName).value(for: deps) {
+                    return cached
+                }
+                let value = \(raw: computeExpr)
+                \(raw: storageName).store(value: value, deps: deps)
+                return value
             }
-            let value = \(raw: computeFnName)()
-            \(raw: storageName).store(value: value, deps: deps)
-            return value
             """
 
         return [accessor]
     }
 
-    // MARK: - PeerMacro (generates backing storage + compute function)
+    // MARK: - PeerMacro (generates backing storage)
 
     public static func expansion(
         of node: AttributeSyntax,
@@ -106,44 +116,39 @@ public struct MemoizedMacro: AccessorMacro, PeerMacro {
 
         guard !keyPaths.isEmpty else { return [] }
 
-        // Extract the original getter body
-        let getterBody: String
-        if let accessorBlock = binding.accessorBlock {
-            if let accessors = accessorBlock.accessors.as(AccessorDeclListSyntax.self) {
-                // Explicit `get { ... }`
-                if let getter = accessors.first(where: { $0.accessorSpecifier.text == "get" }),
-                   let body = getter.body {
-                    getterBody = body.statements.trimmedDescription
-                } else {
-                    throw MacroError("@Memoized requires a getter")
-                }
-            } else if let codeBlock = accessorBlock.accessors.as(CodeBlockItemListSyntax.self) {
-                // Implicit getter: `var x: T { ... }`
-                getterBody = codeBlock.trimmedDescription
-            } else {
-                throw MacroError("@Memoized requires a computed property with a getter body")
-            }
-        } else {
-            throw MacroError("@Memoized requires a computed property, not a stored property")
-        }
+        // Only generate peers for stored properties with initializers
+        guard binding.initializer != nil else { return [] }
 
         let storageName = "_memoized_\(propName)"
-        let computeFnName = "_compute_\(propName)"
 
         // Generate: private let _memoized_X = MemoizedBox<ValueType>()
-        // A reference type so the getter can mutate it without mutating self.
         let storageDecl: DeclSyntax = """
             private let \(raw: storageName) = MemoizedBox<\(raw: valueType)>()
             """
 
-        // Generate: private func _compute_X() -> ValueType { <original body> }
-        let computeDecl: DeclSyntax = """
-            private func \(raw: computeFnName)() -> \(raw: valueType) {
-                \(raw: getterBody)
-            }
-            """
+        return [storageDecl]
+    }
 
-        return [storageDecl, computeDecl]
+    // MARK: - Compute Expression Extraction
+
+    /// Extracts the computation expression from the property's initializer.
+    ///
+    /// Supports:
+    /// - Simple initializer: `var x: T = expression`
+    /// - Closure initializer: `var x: T = { ... }()`
+    private static func extractComputeExpression(from binding: PatternBindingSyntax) throws -> String {
+        guard let initializer = binding.initializer else {
+            throw MacroError("@Memoized requires a stored property with an initializer expression")
+        }
+
+        // Handle closure initializer: `{ ... }()`
+        // Strip the trailing `()` and the outer braces to get the body
+        if let closureExpr = initializer.value.as(FunctionCallExprSyntax.self),
+           let closure = closureExpr.calledExpression.as(ClosureExprSyntax.self) {
+            return closure.statements.trimmedDescription
+        }
+
+        return initializer.value.trimmedDescription
     }
 
     // MARK: - Key Path Extraction

@@ -5,7 +5,7 @@ import XCTest
 #if canImport(MemoizedMacros)
 import MemoizedMacros
 
-nonisolated(unsafe) let testMacros: [String: Macro.Type] = [
+let testMacros: [String: Macro.Type] = [
     "Memoized": MemoizedMacro.self,
 ]
 #endif
@@ -22,9 +22,7 @@ final class MemoizedMacroExpansionTests: XCTestCase {
                 var colorMode: String = "dark"
 
                 @Memoized(\\.colorMode)
-                var palette: [String] {
-                    generatePalette(colorMode)
-                }
+                var palette: [String] = generatePalette(colorMode)
             }
             """,
             expandedSource: """
@@ -32,24 +30,17 @@ final class MemoizedMacroExpansionTests: XCTestCase {
                 var colorMode: String = "dark"
                 var palette: [String] {
                     get {
-                        generatePalette(colorMode)
-                    }
-                    get {
                         let deps = self.colorMode
                         if let cached = _memoized_palette.value(for: deps) {
                             return cached
                         }
-                        let value = _compute_palette()
+                        let value = generatePalette(colorMode)
                         _memoized_palette.store(value: value, deps: deps)
                         return value
                     }
                 }
 
                 private let _memoized_palette = MemoizedBox<[String]>()
-
-                private func _compute_palette() -> [String] {
-                    generatePalette(colorMode)
-                }
             }
             """,
             macros: testMacros
@@ -70,9 +61,7 @@ final class MemoizedMacroExpansionTests: XCTestCase {
                 var fontSize: Double = 14.0
 
                 @Memoized(\\.colorMode, \\.fontSize)
-                var style: String {
-                    "\\(colorMode)-\\(fontSize)"
-                }
+                var style: String = "\\(colorMode)-\\(fontSize)"
             }
             """,
             expandedSource: """
@@ -81,24 +70,17 @@ final class MemoizedMacroExpansionTests: XCTestCase {
                 var fontSize: Double = 14.0
                 var style: String {
                     get {
-                        "\\(colorMode)-\\(fontSize)"
-                    }
-                    get {
                         let deps = (self.colorMode, self.fontSize)
                         if let cached = _memoized_style.value(for: deps) {
                             return cached
                         }
-                        let value = _compute_style()
+                        let value = "\\(colorMode)-\\(fontSize)"
                         _memoized_style.store(value: value, deps: deps)
                         return value
                     }
                 }
 
                 private let _memoized_style = MemoizedBox<String>()
-
-                private func _compute_style() -> String {
-                    "\\(colorMode)-\\(fontSize)"
-                }
             }
             """,
             macros: testMacros
@@ -118,9 +100,7 @@ final class MemoizedMacroExpansionTests: XCTestCase {
                 var threshold: Int = 10
 
                 @Memoized(\\.threshold)
-                var label: String {
-                    "Threshold: \\(threshold)"
-                }
+                var label: String = "Threshold: \\(threshold)"
             }
             """,
             expandedSource: """
@@ -128,24 +108,17 @@ final class MemoizedMacroExpansionTests: XCTestCase {
                 var threshold: Int = 10
                 var label: String {
                     get {
-                        "Threshold: \\(threshold)"
-                    }
-                    get {
                         let deps = self.threshold
                         if let cached = _memoized_label.value(for: deps) {
                             return cached
                         }
-                        let value = _compute_label()
+                        let value = "Threshold: \\(threshold)"
                         _memoized_label.store(value: value, deps: deps)
                         return value
                     }
                 }
 
                 private let _memoized_label = MemoizedBox<String>()
-
-                private func _compute_label() -> String {
-                    "Threshold: \\(threshold)"
-                }
             }
             """,
             macros: testMacros
@@ -157,32 +130,26 @@ final class MemoizedMacroExpansionTests: XCTestCase {
 
     // MARK: - Diagnostics
 
-    func testErrorOnStoredProperty() throws {
+    func testErrorOnComputedProperty() throws {
         #if canImport(MemoizedMacros)
         assertMacroExpansion(
             """
             class Foo {
                 @Memoized(\\.x)
-                var value: Int = 42
+                var value: Int {
+                    42
+                }
             }
             """,
             expandedSource: """
             class Foo {
                 var value: Int {
-                    get {
-                        let deps = self.x
-                        if let cached = _memoized_value.value(for: deps) {
-                            return cached
-                        }
-                        let value = _compute_value()
-                        _memoized_value.store(value: value, deps: deps)
-                        return value
-                    }
+                    42
                 }
             }
             """,
             diagnostics: [
-                DiagnosticSpec(message: "@Memoized requires a computed property, not a stored property", line: 2, column: 5),
+                DiagnosticSpec(message: "@Memoized requires a stored property with an initializer expression", line: 2, column: 5),
             ],
             macros: testMacros
         )
@@ -197,16 +164,12 @@ final class MemoizedMacroExpansionTests: XCTestCase {
             """
             class Foo {
                 @Memoized()
-                var value: Int {
-                    42
-                }
+                var value: Int = 42
             }
             """,
             expandedSource: """
             class Foo {
-                var value: Int {
-                    42
-                }
+                var value: Int = 42
             }
             """,
             diagnostics: [
