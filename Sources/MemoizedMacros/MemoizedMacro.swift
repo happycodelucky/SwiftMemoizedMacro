@@ -3,7 +3,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
-// MARK: - @Memoize Member Macro
+// MARK: - @Memoizable Member Macro
 
 /// Generates shared memoization storage for a type.
 ///
@@ -11,7 +11,7 @@ import SwiftSyntaxMacros
 ///
 ///     private let _memoized = MemoizedStorage()
 ///
-public struct MemoizeMacro: MemberMacro {
+public struct MemoizableMacro: MemberMacro {
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -155,7 +155,7 @@ struct MacroError: Error, CustomStringConvertible {
 @main
 struct MemoizedPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
-        MemoizeMacro.self,
+        MemoizableMacro.self,
         MemoizedExprMacro.self,
     ]
 }

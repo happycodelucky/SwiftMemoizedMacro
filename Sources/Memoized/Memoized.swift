@@ -11,7 +11,7 @@
 ///
 /// ## Usage
 ///
-///     @Memoize
+///     @Memoizable
 ///     class Theme {
 ///         var colorScheme: ColorScheme = .dark
 ///
@@ -27,12 +27,12 @@
 ///     }
 ///
 @attached(member, names: named(_memoized))
-public macro Memoize() = #externalMacro(module: "MemoizedMacros", type: "MemoizeMacro")
+public macro Memoizable() = #externalMacro(module: "MemoizedMacros", type: "MemoizableMacro")
 
 /// Memoizes a computed property, caching the result and only recomputing when
 /// the specified dependency values change.
 ///
-/// Use inside a computed property getter on a type annotated with `@Memoize`.
+/// Use inside a computed property getter on a type annotated with `@Memoizable`.
 /// Pass one or more key paths identifying which properties the computation
 /// depends on, followed by a trailing closure containing the computation.
 ///
@@ -58,7 +58,7 @@ public macro Memoize() = #externalMacro(module: "MemoizedMacros", type: "Memoize
 /// 3. Recomputes, caches, and returns the new value otherwise
 ///
 /// > Important: The dependency key paths must point to `Equatable` values.
-///   The enclosing type must be annotated with `@Memoize`.
+///   The enclosing type must be annotated with `@Memoizable`.
 ///
 @freestanding(expression)
 public macro memoized<T>(_ deps: Any..., body: () -> T) -> T = #externalMacro(module: "MemoizedMacros", type: "MemoizedExprMacro")

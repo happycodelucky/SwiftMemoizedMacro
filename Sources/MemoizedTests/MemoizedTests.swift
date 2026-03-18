@@ -6,20 +6,20 @@ import XCTest
 import MemoizedMacros
 
 let testMacros: [String: Macro.Type] = [
-    "Memoize": MemoizeMacro.self,
+    "Memoizable": MemoizableMacro.self,
     "memoized": MemoizedExprMacro.self,
 ]
 #endif
 
-// MARK: - @Memoize Member Macro Tests
+// MARK: - @Memoizable Macro Tests
 
-final class MemoizeMacroExpansionTests: XCTestCase {
+final class MemoizableMacroExpansionTests: XCTestCase {
 
-    func testMemoizeGeneratesStorage() throws {
+    func testMemoizableGeneratesStorage() throws {
         #if canImport(MemoizedMacros)
         assertMacroExpansion(
             """
-            @Memoize
+            @Memoizable
             class Theme {
                 var colorScheme: String = "dark"
             }
@@ -38,11 +38,11 @@ final class MemoizeMacroExpansionTests: XCTestCase {
         #endif
     }
 
-    func testMemoizeOnStruct() throws {
+    func testMemoizableOnStruct() throws {
         #if canImport(MemoizedMacros)
         assertMacroExpansion(
             """
-            @Memoize
+            @Memoizable
             struct Settings {
                 var threshold: Int = 10
             }

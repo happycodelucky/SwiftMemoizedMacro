@@ -31,14 +31,14 @@ targets: [
 
 ## Usage
 
-Add `@Memoize` to your type and use `#memoized` inside computed property getters.
+Add `@Memoizable` to your type and use `#memoized` inside computed property getters.
 
 ### Single Dependency
 
 ```swift
 import Memoized
 
-@Memoize
+@Memoizable
 @Observable
 class Theme {
     var colorMode: ColorMode = .dark
@@ -55,7 +55,7 @@ class Theme {
 ### Multiple Dependencies
 
 ```swift
-@Memoize
+@Memoizable
 @Observable
 class Theme {
     var colorMode: ColorMode = .dark
@@ -75,7 +75,7 @@ class Theme {
 ### Multi-line Computation
 
 ```swift
-@Memoize
+@Memoizable
 @Observable
 class Theme {
     var colorMode: ColorMode = .dark
@@ -94,7 +94,7 @@ class Theme {
 ### In SwiftUI Views
 
 ```swift
-@Memoize
+@Memoizable
 struct ContentView: View {
     @Environment(\.colorScheme) var colorScheme
 
@@ -121,7 +121,7 @@ struct ContentView: View {
 ### Structs
 
 ```swift
-@Memoize
+@Memoizable
 struct Settings {
     var threshold: Int = 10
 
@@ -137,7 +137,7 @@ struct Settings {
 
 The library uses two macros that work together:
 
-### `@Memoize` (type-level)
+### `@Memoizable` (type-level)
 
 Applied to a class or struct, generates shared memoization storage:
 
@@ -209,7 +209,7 @@ Cache thrashing only occurs when mutable struct copies are independently mutated
 
 ## Design Decisions
 
-**Why two macros (`@Memoize` + `#memoized`) instead of one?**
+**Why two macros (`@Memoizable` + `#memoized`) instead of one?**
 Swift's macro system validates all source code before macro expansion. An `@attached(accessor)` macro on a stored property can't reference `self` in the initializer (the compiler rejects it before the macro runs). By using a freestanding `#memoized` expression macro inside a computed property getter — where `self` is already available — the compiler is happy and the macro can freely reference instance properties.
 
 **Why key paths instead of automatic tracking?**
