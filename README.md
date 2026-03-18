@@ -13,6 +13,8 @@ Think `useMemo` from React, but as a Swift macro.
 
 ## Installation
 
+### Swift Package Manager
+
 Add to your `Package.swift`:
 
 ```swift
@@ -27,6 +29,23 @@ targets: [
         ]
     ),
 ]
+```
+
+### XcodeGen
+
+Add the package to your `project.yml`:
+
+```yaml
+packages:
+  SwiftMemoizedMacro:
+    url: https://github.com/happycodelucky/SwiftMemoizedMacro.git
+    from: 0.5.0
+
+targets:
+  YourTarget:
+    dependencies:
+      - package: SwiftMemoizedMacro
+        product: Memoized
 ```
 
 ## Usage
